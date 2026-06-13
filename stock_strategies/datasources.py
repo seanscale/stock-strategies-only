@@ -83,3 +83,26 @@ def get_month_revenue(stock_id: str, start: str, as_of: str | None = None) -> pd
         df = df[df["avail_date"] <= pd.to_datetime(as_of)]
     return df[["avail_date", "period", "revenue_year", "revenue_month",
                "revenue", "mom", "yoy"]].reset_index(drop=True)
+
+
+def get_valuation(stock_id: str, start: str, as_of: str | None = None) -> pd.DataFrame:
+    """估值（日）。回 date, per, pbr, dividend_yield。per<=0(虧損)→NaN。
+    缺關鍵欄位 → 回空（韌性，不 KeyError）。"""
+    try:
+        df = fetch_finmind_cached("TaiwanStockPER", stock_id, start, end_date=as_of)
+    except FinMindRateLimitError:
+        return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+    rename = {"PER": "per", "PBR": "pbr", "dividend_yield": "dividend_yield"}
+    df = df.rename(columns=rename)
+    if not _require_cols(df, ["date", "per", "pbr"]):
+        return pd.DataFrame()
+    df = df.copy()
+    for c in ["per", "pbr", "dividend_yield"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    df.loc[df["per"] <= 0, "per"] = pd.NA
+    df["per"] = pd.to_numeric(df["per"], errors="coerce")
+    keep = [c for c in ["date", "per", "pbr", "dividend_yield"] if c in df.columns]
+    return df[keep].sort_values("date").reset_index(drop=True)
