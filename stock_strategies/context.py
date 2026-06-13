@@ -14,6 +14,7 @@ import pandas as pd
 from .config import MIN_PRICE_ROWS
 from . import datasources as ds
 from .cache import fetch_finmind_cached, FinMindRateLimitError
+from .indicators import add_indicators
 
 
 @dataclass
@@ -81,6 +82,8 @@ def build_context_from_bundle(
     price_df = _slice_to(raw_bundle.get("price", pd.DataFrame()), as_of)
     if price_df is None or len(price_df) < MIN_PRICE_ROWS:
         meta["missing"].append("price_history_insufficient")
+    if price_df is not None and not price_df.empty:
+        price_df = add_indicators(price_df)
 
     index_df = _slice_to(raw_bundle.get("index", pd.DataFrame()), as_of)
     inst = _slice_to(raw_bundle.get("inst", pd.DataFrame()), as_of)
@@ -137,17 +140,24 @@ def _get_fundamentals_raw(stock_id: str) -> dict:
     try:
         df = fetch_finmind_cached("TaiwanStockFinancialStatements", stock_id, "2015-01-01")
     except FinMindRateLimitError:
-        return {"eps": {}, "roe": {}}
+        return {"eps": {}, "roe": {}, "eps_q": {}}
     if df.empty or not all(c in df.columns for c in ["date", "type", "value"]):
-        return {"eps": {}, "roe": {}}
+        return {"eps": {}, "roe": {}, "eps_q": {}}
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df["year"] = df["date"].dt.year
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     eps = df[df["type"] == "EPS"].groupby("year")["value"].sum().to_dict()
     roe = df[df["type"] == "ROE"].groupby("year")["value"].sum().to_dict()
+    eps_rows = df[df["type"] == "EPS"].copy()
+    eps_q = {}
+    if not eps_rows.empty:
+        eps_rows["quarter"] = eps_rows["date"].dt.month.map({3: 1, 6: 2, 9: 3, 12: 4})
+        for _, r in eps_rows.dropna(subset=["quarter", "value"]).iterrows():
+            eps_q[(int(r["year"]), int(r["quarter"]))] = round(float(r["value"]), 2)
     return {"eps": {int(y): round(float(v), 2) for y, v in eps.items()},
-            "roe": {int(y): round(float(v), 2) for y, v in roe.items()}}
+            "roe": {int(y): round(float(v), 2) for y, v in roe.items()},
+            "eps_q": eps_q}
 
 
 def _gather_raw_bundle(stock_id: str, start: str, lookback_years: int,
