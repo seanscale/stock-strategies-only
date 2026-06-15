@@ -208,9 +208,9 @@ def fetch_finmind_cached(
         fresh = _api_to_df(payload)
         if cached is not None and len(cached):
             df = pd.concat([cached, fresh], ignore_index=True)
-            if "date" in df.columns:
-                df = df.drop_duplicates(subset=[c for c in df.columns]).sort_values("date")
-                df = df.drop_duplicates(subset=["date"] + (["data_id"] if "data_id" in df else []), keep="last")
+            # 全欄位去重：移除增量 overlap 的完全重複列。不可用 subset=["date"] 去重——
+            # long-format（財報多 type、法人多 name）同一 date 有多列，會被誤砍成一列（根因A）。
+            df = df.drop_duplicates()
         else:
             df = fresh
         df = df.reset_index(drop=True)

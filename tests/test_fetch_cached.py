@@ -69,3 +69,26 @@ def test_incremental_only_fetches_after_max_date(monkeypatch):
     cache.fetch_finmind_cached("TaiwanStockPrice", "2330", "2015-01-01")
     # 增量起點應為 max_date(2020-01-02) - 7d = 2019-12-26，而非請求的 2015-01-01
     assert captured["start_date"] == "2019-12-26"
+
+
+def test_long_format_rows_survive_incremental(monkeypatch):
+    """long-format（同 date 多 type，如財報 EPS/淨利）增量合併不可被砍成一列。
+    根因A回歸測試：原本 drop_duplicates(subset=['date']) 會把同 date 多列砍成一列。"""
+    seq = [
+        [{"date": "2024-01-02", "type": "EPS", "value": 5},
+         {"date": "2024-01-02", "type": "ROE", "value": 20}],   # 冷啟動：同 date 兩 type
+        [{"date": "2024-01-02", "type": "EPS", "value": 5},
+         {"date": "2024-01-02", "type": "ROE", "value": 20}],   # 增量 overlap：同樣兩列
+    ]
+    st = {"n": 0}
+
+    def fake(params, timeout, max_retries):
+        i = st["n"]; st["n"] += 1
+        return {"status": 200, "data": seq[min(i, 1)]}
+
+    monkeypatch.setattr(cache, "_rate_limited_get", fake)
+    cache.fetch_finmind_cached("TaiwanStockFinancialStatements", "2330", "2024-01-01")  # 冷啟動寫快取
+    df = cache.fetch_finmind_cached("TaiwanStockFinancialStatements", "2330", "2024-01-01")  # 過期→增量
+    assert len(df[df["type"] == "EPS"]) == 1
+    assert len(df[df["type"] == "ROE"]) == 1
+    assert len(df) == 2   # 兩 type 都在，沒被砍成一列
