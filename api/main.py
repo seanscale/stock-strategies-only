@@ -23,9 +23,29 @@ import time
 import traceback
 from typing import Any, Optional
 
+import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+
+def numpy_safe(obj):
+    """Recursively convert numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: numpy_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [numpy_safe(i) for i in obj]
+    elif isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 try:
     from dotenv import load_dotenv
@@ -182,7 +202,7 @@ def run(payload: RunIn):
     order = {"BUY": 0, "WATCH": 1, "SKIP": 2, "ERROR": 3}
     results.sort(key=lambda x: (order.get(x.get("action"), 4), -x.get("signal_score", 0)))
 
-    return {
+    payload = {
         "strategy": {"id": strategy["id"], "name": strategy["name"]},
         "market": market_state,
         "downgraded": downgraded,
@@ -195,3 +215,4 @@ def run(payload: RunIn):
         },
         "results": results,
     }
+    return JSONResponse(content=numpy_safe(payload))

@@ -19,7 +19,7 @@ def get_market_state(ma_period: int = 20) -> dict:
         df["ma20"] = df["close"].rolling(ma_period).mean()
         latest = df.iloc[-1]
         close = float(latest["close"]); ma20 = float(latest["ma20"])
-        bullish = close > ma20
+        bullish = bool(close > ma20)
         pct = (close / ma20 - 1) * 100
         if bullish:
             note = f"🟢 加權 {close:.0f} 站上 {ma_period} 日線 ({pct:+.1f}%)，BUY 訊號照常發出"
