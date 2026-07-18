@@ -12,12 +12,70 @@ export type Strategy = {
   params: Record<string, any>;
 };
 
+export type StockResult = {
+  stock_id: string;
+  name: string;
+  date: string;
+  action: "BUY" | "WATCH" | "SKIP" | "ERROR";
+  signal_score: number;
+  strategy_id: string;
+  risk_notes: string[];
+  components: {
+    fundamental_pass: boolean;
+    eps_min: number | null;
+    roe_min: number | null;
+    tech_score: number;
+    tech_signals: string[];
+    backtest_winrate: number;
+    backtest_samples: number;
+    volume_patterns: string[];
+    volume_verdict: string;
+    volume_bonus: number;
+    // 新增：籌碼面
+    chip_score?: number;
+    chip_signals?: string[];
+    chip_details?: {
+      foreign_net_3d?: number;
+      trust_net_3d?: number;
+      total_net_3d?: number;
+      foreign_consecutive_buy_days?: number;
+      trust_consecutive_buy_days?: number;
+    };
+    // 新增：月營收
+    revenue_score?: number;
+    revenue_signals?: string[];
+    revenue_details?: {
+      latest_yoy?: number | null;
+      latest_mom?: number | null;
+      consecutive_yoy_positive?: number;
+      latest_revenue?: number | null;
+      revenue_period?: string | null;
+    };
+  };
+  trend: {
+    chg_5d: number;
+    chg_20d: number;
+    vol_ratio: number;
+    pct_from_high: number;
+    above_ma20: boolean;
+    above_ma60: boolean;
+  };
+  entry_price: number;
+  stop_loss_price: number;
+  target_price: number;
+  risk_reward_ratio: number;
+  position_size_pct: number;
+  entry_rule: string;
+};
+
 export type RunResult = {
   strategy: { id: string; name: string };
   market: { bullish: boolean; close: number | null; ma20: number | null; note: string };
   downgraded: number;
   summary: { total: number; buy: number; watch: number; skip: number; error: number };
-  results: any[];
+  results: StockResult[];
+  scan_mode?: string;
+  scanned_at?: string;
 };
 
 async function jfetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,9 +110,21 @@ export const api = {
     }),
   getMarket: () => jfetch<any>("/api/market"),
   getWatchlist: () => jfetch<{ items: any[]; error?: string }>("/api/watchlist"),
-  run: (strategy_id: string, limit?: number) =>
+  getUniverse: (market?: string) =>
+    jfetch<{ total: number; stocks: any[] }>(`/api/universe?market=${market || "all"}`),
+  getLastResult: () =>
+    jfetch<{ ok: boolean; result?: RunResult; message?: string }>("/api/last-result"),
+  run: (
+    strategy_id: string,
+    options?: { limit?: number; scan_mode?: "watchlist" | "universe"; universe_market?: string }
+  ) =>
     jfetch<RunResult>("/api/run", {
       method: "POST",
-      body: JSON.stringify({ strategy_id, limit }),
+      body: JSON.stringify({
+        strategy_id,
+        limit: options?.limit,
+        scan_mode: options?.scan_mode || "watchlist",
+        universe_market: options?.universe_market || "all",
+      }),
     }),
 };

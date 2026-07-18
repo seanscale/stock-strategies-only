@@ -54,6 +54,16 @@ _PARAM_DEFAULTS: dict = {
     # 大盤濾鏡
     "market_filter_enabled": True,
     "market_filter_ma_period": 20,
+    # 籌碼面
+    "use_chip_score": True,
+    "weight_chip": 0.0,
+    "chip_foreign_days": 3,
+    "chip_trust_days": 2,
+    # 月營收
+    "use_revenue_score": True,
+    "weight_revenue": 0.0,
+    "revenue_yoy_threshold": 0.05,
+    "revenue_consecutive_months": 2,
 }
 
 
@@ -88,11 +98,17 @@ def merge_params(strategy: Optional[dict]) -> dict:
     for k, v in params.items():
         if k in merged and v is not None:
             merged[k] = v
+    # 允許 weight_chip / weight_revenue 也從 params 傳入（不在白名單時直接蓋）
+    for extra_key in ("weight_chip", "weight_revenue"):
+        if extra_key in (strategy.get("params") or {}):
+            merged[extra_key] = (strategy["params"] or {})[extra_key]
     # 健全性：權重總和不為 0
     total = (
         merged["weight_fundamental"]
         + merged["weight_technical"]
         + merged["weight_backtest"]
+        + merged.get("weight_chip", 0.0)
+        + merged.get("weight_revenue", 0.0)
     )
     if total <= 0:
         merged["weight_fundamental"] = 0.3

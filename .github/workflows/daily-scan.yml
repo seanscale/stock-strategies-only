@@ -1,0 +1,63 @@
+name: 每日自動選股掃描
+
+on:
+  # 每個交易日台灣時間 08:30（UTC 00:30）自動執行
+  schedule:
+    - cron: "30 0 * * 1-5"
+  # 也可手動觸發
+  workflow_dispatch:
+    inputs:
+      strategy_id:
+        description: "策略 ID（預設 default）"
+        required: false
+        default: "default"
+      scan_mode:
+        description: "掃描模式：watchlist | universe"
+        required: false
+        default: "watchlist"
+
+jobs:
+  daily-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 執行每日選股掃描
+        env:
+          RAILWAY_URL: ${{ secrets.RAILWAY_URL }}
+          SCHEDULE_SECRET: ${{ secrets.SCHEDULE_SECRET }}
+        run: |
+          STRATEGY_ID="${{ github.event.inputs.strategy_id || 'default' }}"
+          SCAN_MODE="${{ github.event.inputs.scan_mode || 'watchlist' }}"
+          
+          echo "📊 開始執行選股掃描..."
+          echo "策略：${STRATEGY_ID}"
+          echo "模式：${SCAN_MODE}"
+          
+          RESPONSE=$(curl -s -X POST \
+            "${RAILWAY_URL}/api/schedule/run?strategy_id=${STRATEGY_ID}&scan_mode=${SCAN_MODE}&secret=${SCHEDULE_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 1800)
+          
+          echo "API 回應："
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          if data.get('ok'):
+              s = data.get('summary', {})
+              print(f'✅ 掃描完成')
+              print(f'   總計：{s.get(\"total\", 0)} 支')
+              print(f'   BUY：{s.get(\"buy\", 0)} 支')
+              print(f'   WATCH：{s.get(\"watch\", 0)} 支')
+              print(f'   SKIP：{s.get(\"skip\", 0)} 支')
+              print(f'   掃描時間：{data.get(\"scanned_at\", \"\")}')
+              buy_stocks = data.get('buy_stocks', [])
+              if buy_stocks:
+                  print(f'')
+                  print(f'🟢 BUY 訊號股票：')
+                  for s in buy_stocks:
+                      print(f'   {s[\"stock_id\"]} {s[\"name\"]} (分數: {s[\"score\"]})')
+          else:
+              print(f'❌ 掃描失敗：{data}')
+              sys.exit(1)
+          "

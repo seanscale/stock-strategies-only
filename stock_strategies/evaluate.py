@@ -9,6 +9,7 @@ from .indicators import add_indicators, tech_score_at
 from .backtest import backtest
 from .volume import detect_patterns, verdict as volume_verdict
 from .loader import merge_params
+from .chip import chip_score_for
 
 
 def evaluate(stock_id: str, name: str, strategy: dict | None = None) -> Optional[dict]:
@@ -50,6 +51,11 @@ def evaluate(stock_id: str, name: str, strategy: dict | None = None) -> Optional
         else:
             vp = {"patterns": [], "bonus": 0, "details": {}}
 
+        # 籌碼面 + 月營收分數
+        chip_data = chip_score_for(stock_id, params)
+        chip_score = chip_data["chip_score"]
+        revenue_score = chip_data["revenue_score"]
+
         fund_score = 100 if fund_pass else 40
         tech_score = max(0, min(100, ts["score"] + vp["bonus"]))
         winrate = bt.get("winrate") or 0.5
@@ -58,12 +64,18 @@ def evaluate(stock_id: str, name: str, strategy: dict | None = None) -> Optional
         wf = params["weight_fundamental"]
         wt = params["weight_technical"]
         wb = params["weight_backtest"]
-        # 正規化權重
-        wsum = wf + wt + wb
-        if wsum > 0:
-            wf, wt, wb = wf / wsum, wt / wsum, wb / wsum
+        wc = params.get("weight_chip", 0.0)      # 籌碼面權重（預設 0，向後相容）
+        wr = params.get("weight_revenue", 0.0)   # 月營收權重（預設 0，向後相容）
 
-        signal_score = round(wf * fund_score + wt * tech_score + wb * bt_score, 1)
+        # 正規化權重
+        wsum = wf + wt + wb + wc + wr
+        if wsum > 0:
+            wf, wt, wb, wc, wr = wf / wsum, wt / wsum, wb / wsum, wc / wsum, wr / wsum
+
+        signal_score = round(
+            wf * fund_score + wt * tech_score + wb * bt_score
+            + wc * chip_score + wr * revenue_score, 1
+        )
 
         fund_gate = (not params["fundamental_pass_required"]) or fund_pass
         if (
@@ -124,6 +136,14 @@ def evaluate(stock_id: str, name: str, strategy: dict | None = None) -> Optional
                 "volume_details": vp["details"],
                 "volume_bonus": vp["bonus"],
                 "volume_verdict": volume_verdict(vp["patterns"]),
+                # 新增：籌碼面
+                "chip_score": chip_score,
+                "chip_signals": chip_data["chip_signals"],
+                "chip_details": chip_data["chip_details"],
+                # 新增：月營收
+                "revenue_score": revenue_score,
+                "revenue_signals": chip_data["revenue_signals"],
+                "revenue_details": chip_data["revenue_details"],
             },
             "trend": {
                 "chg_5d": round(chg_5d, 2),
